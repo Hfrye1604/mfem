@@ -1,0 +1,1 @@
+ g++  -O3 -std=c++11 -I../../mfem  perturbed_drift_diffusion_1d.cpp -o pdd1d -L../../mfem -lmfem -lrt

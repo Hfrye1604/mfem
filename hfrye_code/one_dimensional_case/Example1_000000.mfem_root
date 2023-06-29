@@ -1,0 +1,29 @@
+{
+  "dsets": {
+    "main": {
+      "cycle": 0,
+      "domains": 1,
+      "fields": {
+        "solution": {
+          "path": "Example1_000000/solution.%06d",
+          "tags": {
+            "assoc": "nodes",
+            "comps": "1",
+            "lod": "2"
+          }
+        }
+      },
+      "mesh": {
+        "format": "0",
+        "path": "Example1_000000/mesh.%06d",
+        "tags": {
+          "max_lods": "32",
+          "spatial_dim": "1",
+          "topo_dim": "1"
+        }
+      },
+      "time": 0,
+      "time_step": 0
+    }
+  }
+}

@@ -13,100 +13,57 @@
  * File:   advectionSUPGinteg.hpp
  * Author: Hfrye1604
  *
- * Created on September 13, 2017, 10:55 AM
+ * Created on June 23, 2023, 1:00 PM
+ * 
+ * 
  */
 
 #ifndef MFEM_ADVECTSUPGINTEG
 #define MFEM_ADVECTSUPGINTEG
 
 #include "../config/config.hpp"
-#include "fe.hpp"
-#include "coefficient.hpp"
 #include "nonlininteg.hpp"
+#include "fe.hpp"
+#include "fespace.hpp"
+#include "coefficient.hpp"
+#include "ceed/interface/util.hpp"
+
 
 namespace mfem
 {
-///Navier-Stokes field integrator 
-class VectorAdvectionIntegrator : public BilinearFormIntegrator
+///Advection field integrator with SUPG
+class AdvectionSUPGIntegrator : public BilinearFormIntegrator
 {
-private:
-    DenseMatrix PMatI, PMatO, dshape, gshape, Jinv;
+private:    
+    DenseMatrix PMatI, dshape, gshape, Jinv; //PMatO
     
     VectorCoefficient* bdfVec;
   
-    Coefficient* nuCoef; 
+    Coefficient* nuCoef;
+    Coefficient* DiffCoef; //diffusion coefficient
     
-    double eleVol, eleLength;
+    double eleLength , eleVol;
     
     Vector shape;
-    
-    void ConvectionIntegrator(const FiniteElement &el,
-                                    ElementTransformation &Trans,
-                                    DenseMatrix& elmat);
-    
-    void StabLaplacianIntegrator(const FiniteElement &el,
-                                      ElementTransformation &Tr,
-                                      DenseMatrix &elmat);
-    void SatbDivIntegrator(const FiniteElement &el, 
-                           ElementTransformation &Tr,
-                           DenseMatrix &elmat);
-    
-    void StabConvectionIntegrator(const FiniteElement &el,
-                                  ElementTransformation &Tr, 
-                                  DenseMatrix &elmat);
-    
+
     void StabConvGradIntegrator(const FiniteElement &el,
                                     ElementTransformation &Tr,
                                     DenseMatrix &elmat);
-    
-    void StabVecGradIntegrator(const FiniteElement &el,
-                                       ElementTransformation &Tr,
-                                       Vector &elvect);
-    
-    void StabVecAdvIntegrator(const FiniteElement &el,
-                                      ElementTransformation &Tr, 
-                                      Vector &elvect);
-    
-    void StabVecLapIntegrator(const FiniteElement &el,
-                                      ElementTransformation &Tr,
-                                      Vector &elvect);
-    
-    void CalcPhysLaplacian(DenseMatrix &Hessian,  
-                           double nnodes,
-                           double spaceDim,
-                           Vector& Laplacian);
    
-    void StabLapLapIntegrator(const FiniteElement &el,
-                              ElementTransformation &Tr,
-                              DenseMatrix &elmat);
-    
-    void StabLapGradIntegrator(const FiniteElement &el, 
-                               ElementTransformation &Tr, 
-                               DenseMatrix &elmat); 
-    
-    void StabLapConvIntegrator(const FiniteElement &el,
-                               ElementTransformation &Tr, 
-                               DenseMatrix &elmat);
-    
-    void CalculateTaus(const double nu, const double normVel, double& tauMom, 
-                       double& tauMass);
+    void CalculateTaus(const double nu, const double normVel, const double Diff, double& tauSUPG);
     
 public:
-    VectorAdvectionIntegrator(Vector exBodyForce, 
-          double ViscCoef ) {
-        bdfVec = new VectorConstantCoefficient(exBodyForce);
-        nuCoef = new ConstantCoefficient(ViscCoef);
-          };
+    AdvectionSUPGIntegrator(VectorConstantCoefficient exBodyForce, 
+          double ViscCoef, double diffusion) : bdfVec(&exBodyForce){
+           nuCoef = new ConstantCoefficient(ViscCoef);
+           DiffCoef = new ConstantCoefficient(diffusion);
+          }
           
-    virtual void AssembleElementVector(const FiniteElement &el,
+    virtual void AssembleElementMatrix(const FiniteElement &el,
                                       ElementTransformation &Tr,
-                                      const Vector &elfun, Vector &elvect);
-
-    virtual void AssembleElementGrad(const FiniteElement &el,
-                                    ElementTransformation &Tr,
-                                    const Vector &elfun, DenseMatrix &elmat);
-
-   virtual ~VectorAdvectionIntegrator();
+                                      DenseMatrix &elmat); //.const Vector &elfun
+    
+    virtual ~AdvectionSUPGIntegrator();
    
 };
 }

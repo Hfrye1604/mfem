@@ -46,7 +46,7 @@
 #include "ceed/solvers/algebraic.hpp"
 #include "lor/lor.hpp"
 #include "dgmassinv.hpp"
-#include "NSnonlininteg.hpp"//added for nonlinNSinteg
+//#include "NSnonlininteg.hpp"//added for nonlinNSinteg
 #include "advectionSUPGinteg.hpp"
 
 #ifdef MFEM_USE_MPI

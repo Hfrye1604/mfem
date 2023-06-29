@@ -97,7 +97,8 @@ public:
         bdfVec = new VectorConstantCoefficient(exBodyForce);
         nuCoef = new ConstantCoefficient(ViscCoef);
           };
-          
+    //in current master branch will have to comment out these two functions
+    //Maybe not AssembleElementGrad since not in bilininteg.cpp     
     virtual void AssembleElementVector(const FiniteElement &el,
                                       ElementTransformation &Tr,
                                       const Vector &elfun, Vector &elvect);

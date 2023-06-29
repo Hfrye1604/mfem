@@ -775,10 +775,10 @@ void VectorNonLinearNSIntegrator::CalculateTaus(const double nu,
 {
     tauMom = tauMass = 0.0;
     
-    double invtau = 2.0 * normVel / eleLength + 4.0 * nu / (eleLength * eleLength);     
+    double invtau = 2.0 * normVel / eleLength ;//+ 4.0 * nu / (eleLength * eleLength);     
     tauMom = 1.0/invtau;   
     
-    tauMass = nu + 0.5 * eleLength * normVel;
+    tauMass = 0.0;//nu + 0.5 * eleLength * normVel;
    
 }
 
