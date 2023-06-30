@@ -1,3 +1,4 @@
+#if 0
 // Copyright (c) 2010, Lawrence Livermore National Security, LLC. Produced at
 // the Lawrence Livermore National Laboratory. LLNL-CODE-443211. All Rights
 // reserved. See file COPYRIGHT for details.
@@ -115,3 +116,4 @@ public:
 
 #endif /* NSNONLININTEG_HPP */
 
+#endif

@@ -6,7 +6,7 @@
 //#include "/g/g11/frye11/mfem/mfem.hpp"
 #include "mfem.hpp"
 //#include "NSnonlininteg_modified.hpp"
-#include "/g/g11/frye11/mfem/fem/advectionSUPGinteg.hpp"
+//#include "fem/advectionSUPGinteg.hpp"
 #include <fstream>
 #include <iostream>
 

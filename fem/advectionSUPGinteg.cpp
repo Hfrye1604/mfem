@@ -114,11 +114,11 @@ namespace mfem
 
             double epsilon = (1.0/tanh(alpha)) - (1.0/alpha);//Shibata paper
             
-            double tauSUPG = eleLength/ (2.0 * normVel) * epsilon ;//+ 4.0 * nu / (eleLength * eleLength);     
+            tauSUPG = eleLength/ (2.0 * normVel) * epsilon ;//+ 4.0 * nu / (eleLength * eleLength);     
                
         }
 
-        ~AdvectionSUPGIntegrator(){
+        AdvectionSUPGIntegrator::~AdvectionSUPGIntegrator(){
         //fill in later    
         }
 
