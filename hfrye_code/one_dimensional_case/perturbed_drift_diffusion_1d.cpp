@@ -36,12 +36,19 @@ void velocity_function(const Vector &x, Vector &v)
 {
    int dim = x.Size();
 
+if(dim == 1){
    v(0) = 1.0;
+} else if(dim == 2){
+    v(0) = 1.0;
+    v(1) = 1.0;
+} else {
+    cout << "dimension size not implmeneted yet. Aborting..."<<endl;
+}
 }
 
 
 int main(int agrc, char *argv[]){
-    //const char *mesh_file = "../../mfem/data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
+    const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
     //const char *mesh_file = "../../mfem/data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
     double t_final = 10.0;
@@ -52,11 +59,11 @@ int main(int agrc, char *argv[]){
     ode_solver = new BackwardEulerSolver;
 
     //Define Mesh 
-    //Mesh mesh(mesh_file);
+    Mesh mesh(mesh_file);
 
-    Mesh mesh(10,1.0);
+    //Mesh mesh(10,1.0);
     // possibly refine mesh to increase resolution
-    mesh.UniformRefinement();
+    //mesh.UniformRefinement();
    // mesh.UniformRefinement();
 
     int dim = mesh.Dimension();
@@ -73,7 +80,7 @@ int main(int agrc, char *argv[]){
     cathode_bdr =0;
     anode_bdr = 0;
     cathode_bdr[0]=1;
-    anode_bdr[1]=1;
+    anode_bdr[2]=1;
     //E_field for 1d
 
     double V = 1.0; //anode voltage
@@ -155,11 +162,12 @@ int main(int agrc, char *argv[]){
     M.AddDomainIntegrator(new MassIntegrator); //same for both equations
     
     ConstantCoefficient viscocity(0.0); 
-    Ae.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0)); //alpha=-1.0 to flip sign
-    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(vtest,0.0,1.0));
+    //Ae.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0)); //alpha=-1.0 to flip sign
+   
+    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(vel_test,0.0,1.0));
 
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));
-
+    
     ConstantCoefficient gamma(0.1); //to be multipled into the mass matrix of the Kep operator
     Kee.AddBoundaryIntegrator(new MassIntegrator,cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
@@ -170,57 +178,72 @@ int main(int agrc, char *argv[]){
     ConstantCoefficient SeeConst(1.0); //TODO: will have to compute full expression constant 
     See.AddDomainIntegrator(new MassIntegrator(SeeConst));
 
-    Ap.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0));
-    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(vtest,0.0,2.0));
+   // Ap.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0));
+    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(vel_test,0.0,2.0));
 
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
 
-    Kep.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
+    Kp.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
 
     ConstantCoefficient SpeConst(1.0); //TODO: will have to compute full See expression constant
     Spe.AddDomainIntegrator(new MassIntegrator(SpeConst));
-
+    
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
     
-    M.Assemble();
-    Ae.Assemble();   
+    M.Assemble(); 
+    Ae.Assemble(); 
     De.Assemble();   
-    //Kee.Assemble();
-    //Kep.Assemble();
+    Kee.Assemble();
+    Kep.Assemble();
     See.Assemble();
 
     Ap.Assemble();
     Dp.Assemble();
-    //Kp.Assemble();
+    Kp.Assemble();
     Spe.Assemble();
-
     // set up Jacobians
 
     SparseMatrix J11, AeSp, DeSp;
-    AeSp = Ae.SpMat();
-    //AeSp *= -1.0;
-    DeSp = De.SpMat();
-    //DeSp *= -1.0; 
+
     //J11 = -Ae.SpMat() - De.SpMat() + Kee.SpMat() + See.SpMat();
     J11.Add(-1.0,Ae.SpMat());
     J11.Add(-1.0,De.SpMat());
+    J11.Add(1.0,Kee.SpMat());
     J11.Add(1.0,See.SpMat());
 
-    //cout << J11 << endl;
-
     SparseMatrix J12; 
-   // J12 = Kep.SpMat();
+    J12 = Kep.SpMat();
 
     SparseMatrix J21; 
-    
+    J21 = Spe.SpMat();
 
     SparseMatrix J22;
+
     //J22 = -Ap.SpMat() - Dp.SpMat() + Kp.SpMat();
+    J22.Add(-1.0,Ap.SpMat());
+    J22.Add(-1.0,Dp.SpMat());
+    J22.Add(1.0,Kp.SpMat());
 
     //Set up block jacobian and block mass matrix
+    Array<int> block_offsets(3); // number of variables + 1
+    for(int k = 0; k < 3; k++){
+        block_offsets[k] = k * fespace.GetNDofs();
+    }
+    BlockMatrix Block_Jacobian(block_offsets);
+    Block_Jacobian.SetBlock(0,0,&J11);
+    Block_Jacobian.SetBlock(0,1,&J12);
+    Block_Jacobian.SetBlock(1,0,&J21);
+    Block_Jacobian.SetBlock(1,1,&J22);
 
+    SparseMatrix MassMat(M.SpMat());
+
+    BlockOperator Block_Mass(block_offsets);
+    Block_Mass.SetBlock(0,0,&MassMat);
+    Block_Mass.SetBlock(1,1,&MassMat);
+
+    BlockVector u_block(block_offsets);
 
     //eigensolver TBD
 
@@ -262,12 +285,12 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
     //b.Assemble();
 
     //1D case
-    
+/* 
     Array<int> dir_attr(mesh->bdr_attributes.Max());
     dir_attr = 1; //all attributes to be dirichlet's in 1d case only
-
+*/
     // 2D case
-/*
+
     Array<int> dir_attr(mesh->bdr_attributes.Max());
     Array<int> neu_attr(mesh->bdr_attributes.Max());
 
@@ -279,7 +302,7 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
 
     neu_attr[1] = 1;
     neu_attr[3] = 1;
-*/
+
     //cout << "boundary attr: " << endl;
    // for(int i=0;i<bdr_attr.Size();i++)
     //    cout << bdr_attr[i] << endl;
@@ -287,8 +310,8 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
     Array<int> anode_mkr(mesh->bdr_attributes.Max());
     Array<int> cathode_mkr(mesh->bdr_attributes.Max());
 
-    lap_1d_bc(anode_mkr, cathode_mkr);
-    //lap_2d_bc(anode_mkr,cathode_mkr);
+    //lap_1d_bc(anode_mkr, cathode_mkr);
+    lap_2d_bc(anode_mkr,cathode_mkr);
     
     u.ProjectBdrCoefficient(VCoef,anode_mkr);
     u.ProjectBdrCoefficient(zero,cathode_mkr);

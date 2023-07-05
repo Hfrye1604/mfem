@@ -28,14 +28,13 @@
 #include "coefficient.hpp"
 #include "ceed/interface/util.hpp"
 
-
 namespace mfem
 {
 ///Advection field integrator with SUPG
 class AdvectionSUPGIntegrator : public BilinearFormIntegrator
 {
 private:    
-    DenseMatrix PMatI, dshape, gshape, Jinv; //PMatO
+    DenseMatrix dshape, adjJ,bdfVec_ir; //PMatI, PMatO
     
     VectorCoefficient* bdfVec;
   
@@ -44,16 +43,25 @@ private:
     
     double eleLength , eleVol;
     
-    Vector shape;
-
+    Vector shape, vecPhys, BdFidxT ,BdFidxT1, BdFidxT2;
+/*
     void StabConvGradIntegrator(const FiniteElement &el,
                                     ElementTransformation &Tr,
                                     DenseMatrix &elmat);
+   */
+
+    void ConvectionIntegrator(const FiniteElement &el,
+                                    ElementTransformation &Tr,
+                                    DenseMatrix &elmat);
+
+    void StabSUPGIntegrator(const FiniteElement &el,
+                                    ElementTransformation &Tr,
+                                    DenseMatrix &elmat);
    
-    void CalculateTaus(const double nu, const double normVel, const double Diff, double& tauSUPG);
+    void CalculateTaus(const double normVel, const double Diff, double& tauSUPG);
     
 public:
-    AdvectionSUPGIntegrator(VectorConstantCoefficient exBodyForce, 
+    AdvectionSUPGIntegrator(VectorCoefficient &exBodyForce, 
           double ViscCoef, double diffusion) : bdfVec(&exBodyForce){
            nuCoef = new ConstantCoefficient(ViscCoef);
            DiffCoef = new ConstantCoefficient(diffusion);
