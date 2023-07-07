@@ -9,12 +9,19 @@
 //#include "fem/advectionSUPGinteg.hpp"
 #include <fstream>
 #include <iostream>
+#include "params.hpp"
 
 using namespace std;
 using namespace mfem;
 
-//Compute E field
-Vector E_field(int, double, double, FiniteElementSpace);
+//Computes E field with given mesh
+GridFunction electric_potential(int, double, double, FiniteElementSpace&, bool);
+
+//Checks for Physics in limits of drift-diffusion equation
+//BCs are kept dirichlets homogenous 
+void time_indep_diffusion(FiniteElementSpace&, BlockMatrix&);//elliptic problem
+void time_dep_diffusion(FiniteElementSpace&, BlockMatrix&);//parabolic problem
+void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&);//
 
 //return correct boundary markers for problem
 void lap_1d_bc(Array<int> &anode, Array<int> &cathode);
@@ -48,11 +55,9 @@ if(dim == 1){
 
 
 int main(int agrc, char *argv[]){
-    const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
-    //const char *mesh_file = "../../mfem/data/inline-segment.mesh";
+    //const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
+    const char *mesh_file = "../../data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
-    double t_final = 10.0;
-    double dt = 0.01;
 
     //time integrator for model verification purposes, perturbation equations might carry little physical meaning integrated like this however.
     ODESolver *ode_solver = NULL;
@@ -80,62 +85,39 @@ int main(int agrc, char *argv[]){
     cathode_bdr =0;
     anode_bdr = 0;
     cathode_bdr[0]=1;
-    anode_bdr[2]=1;
+    anode_bdr[1]=1; //change for 2d
     //E_field for 1d
 
-    double V = 1.0; //anode voltage
-    Vector E; 
-    E = E_field(order,V,1.0,fespace);
-/* for diagnostic purposes
-    DataCollection *dc = NULL;
-    dc = new VisItDataCollection("E_field",&mesh);
-    dc->SetPrecision(8);
-    dc->RegisterField("solution",&E);
-    dc->Save();
-*/
-    //apply BCs here
-    //Array<int>
+    GridFunction e_pot = electric_potential(order,V,epsilon,fespace,true);
+    GradientGridFunctionCoefficient E(&e_pot);
+    
+    //TODO: come up with alternative to keep v_s as gridfunctions
+    ScalarVectorProductCoefficient v_e(mu_e,E);
+    ScalarVectorProductCoefficient v_p(mu_p,E);
 
-    //set up linear and bilinear forms for each 
-    //set up velocity coefficients for particle species
-    //VectorFunctionCoefficient velocity_e(dim, velocity_function_e);
-    //VectorFunctionCoefficient velocity_p(dim, velocity_function_p);
-    double mu_e = 1.0;//will add accurate values later
-    double mu_p = 1.0;
+    DivergenceGridFunctionCoefficient div_v_e(v_e);
+    DivergenceGridFunctionCoefficient div_v_p(v_p);
 
-    //GridFunctionCoefficient velocity_e(mu_e*E);
-    //GridFunctionCoefficient velocity_p(mu_p*E);
-    Vector v_e;
-    v_e = E;
-    v_e *= mu_e;
+    //Computing L2 norms of velocities
+    InnerProductCoefficient v_e_mag_sqr(v_e,v_e);
+    PowerCoefficient v_e_mag(v_e_mag,0.5);
 
-    cout << "v_e:" << endl;
-    for(int i = 0; i < v_e.Size();i++)
-        cout << v_e[i] << endl;
+    InnerProductCoefficient v_p_mag_sqr(v_p,v_p);
+    PowerCoefficient v_p_mag(v_p_mag,0.5);
 
-    VectorConstantCoefficient velocity_e(v_e);
+    SumCoefficient alpha_min_eta(Alpha,Eta,1.0,-1.0);
+    ProductCoefficient ame_ve_mag(alpha_min_eta,v_e_mag);
 
-    Vector v_p;
-    v_p = E;
-    v_p *= mu_p;
+    ProductCoefficient alpha_ve_mag(Alpha,v_e_mag);
+    // constants to be multiplied into mass matrices for S matrices
+    SumCoefficient SeeTot(ame_ve_mag,div_v_e,1.0,-1.0);
+    SumCoefficient SpeTot(alpha_ve_mag,div_v_p,1.0,-1.0);
 
-    Vector v_test;
-    v_test.SetSize(1);
-    v_test[0]=1.0;
-
-    //Vector v_test(-0.1,1);
-
-    VectorConstantCoefficient velocity_p(v_p);
-    VectorFunctionCoefficient vel_test(dim,velocity_function);
-    //cout << "vel_test" << vel_test.Size() << endl;
-    //for(int i=0;i < vel_test.Size();i++)
-      //  cout << vel_test[i] << endl;
-        
+    //VectorFunctionCoefficient vel_test(dim,velocity_function);
+    
     //BCs will have to specify in function the specifics of BCs later
     
     //For initial conditions primarily for physics check, will have to specify later
-
-    ConstantCoefficient zero(0.0);
     
     //Following integrator matrix notation from Shibata paper
     BilinearForm M(&fespace); //mass matrix the same for both species
@@ -150,44 +132,20 @@ int main(int agrc, char *argv[]){
     BilinearForm Kp(&fespace);
     BilinearForm Spe(&fespace);
 
-    Vector vec;
-    vec.SetSize(1);
-    vec[0] = 1.0;
-
-    VectorConstantCoefficient vtest(vec);
-
-    ConstantCoefficient diff_const_e(1.0);
-    ConstantCoefficient diff_const_p(1.0);
-
     M.AddDomainIntegrator(new MassIntegrator); //same for both equations
-    
-    ConstantCoefficient viscocity(0.0); 
-    //Ae.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0)); //alpha=-1.0 to flip sign
    
-    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(vel_test,0.0,1.0));
-
-    De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));
-    
-    ConstantCoefficient gamma(0.1); //to be multipled into the mass matrix of the Kep operator
+    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,1.0,diff_const_e));//note that SUPG tau is dependant on diffusion
+    De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
     Kee.AddBoundaryIntegrator(new MassIntegrator,cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
-
-    Kep.AddBoundaryIntegrator(new MassIntegrator(gamma),cathode_bdr);
+    Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma),cathode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
-
-    ConstantCoefficient SeeConst(1.0); //TODO: will have to compute full expression constant 
-    See.AddDomainIntegrator(new MassIntegrator(SeeConst));
-
-   // Ap.AddDomainIntegrator(new ConservativeConvectionIntegrator(vel_test,-1.0));
-    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(vel_test,0.0,2.0));
-
+    See.AddDomainIntegrator(new MassIntegrator(SeeTot));
+    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
-
     Kp.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
-
-    ConstantCoefficient SpeConst(1.0); //TODO: will have to compute full See expression constant
-    Spe.AddDomainIntegrator(new MassIntegrator(SpeConst));
+    Spe.AddDomainIntegrator(new MassIntegrator(SpeTot));
     
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
@@ -205,45 +163,76 @@ int main(int agrc, char *argv[]){
     Spe.Assemble();
     // set up Jacobians
 
-    SparseMatrix J11, AeSp, DeSp;
+    SparseMatrix J11;
 
     //J11 = -Ae.SpMat() - De.SpMat() + Kee.SpMat() + See.SpMat();
-    J11.Add(-1.0,Ae.SpMat());
+    J11 = Ae.SpMat();
+    J11 *= -1.0;
     J11.Add(-1.0,De.SpMat());
     J11.Add(1.0,Kee.SpMat());
     J11.Add(1.0,See.SpMat());
+/*
+    J11.Finalize();
+
+cout << "J11 matrix" << endl;
+for(int i =0;i<J11.Size();i++)
+    for(int j=0;j<J11.Size();i++)
+        cout << J11.Elem(i,j) <<" "<< endl;
+*/
+
 
     SparseMatrix J12; 
     J12 = Kep.SpMat();
 
+ cout <<  "J12" << J12.GetData() << endl;
+
     SparseMatrix J21; 
     J21 = Spe.SpMat();
 
+ cout <<  "J21" << J21.GetData() << endl;
     SparseMatrix J22;
 
     //J22 = -Ap.SpMat() - Dp.SpMat() + Kp.SpMat();
-    J22.Add(-1.0,Ap.SpMat());
+    J22 = Ap.SpMat();
+    J22 *= -1.0;
     J22.Add(-1.0,Dp.SpMat());
     J22.Add(1.0,Kp.SpMat());
+
+ cout <<  "J22" << J22.GetData() << endl;
+
+    //jacobian block check
+    cout<< "Size check: J11 "<<J11.Size()<< " J12 "<<J12.Size()<< " J21 "<<J21.Size()<< " J22 "<<J22.Size()<<endl;
 
     //Set up block jacobian and block mass matrix
     Array<int> block_offsets(3); // number of variables + 1
     for(int k = 0; k < 3; k++){
         block_offsets[k] = k * fespace.GetNDofs();
     }
+
     BlockMatrix Block_Jacobian(block_offsets);
     Block_Jacobian.SetBlock(0,0,&J11);
     Block_Jacobian.SetBlock(0,1,&J12);
     Block_Jacobian.SetBlock(1,0,&J21);
     Block_Jacobian.SetBlock(1,1,&J22);
 
+    Block_Jacobian.Finalize();
+
+    for(int i =0;i<J11.Size()+J21.Size();i++)
+        cout << "Block Jacobian Diag: "<<Block_Jacobian.Elem(i,i)<<endl;
+
     SparseMatrix MassMat(M.SpMat());
 
-    BlockOperator Block_Mass(block_offsets);
+    BlockMatrix Block_Mass(block_offsets);
     Block_Mass.SetBlock(0,0,&MassMat);
     Block_Mass.SetBlock(1,1,&MassMat);
 
+    Block_Mass.Finalize();
+
+    //from here the eigenvalue problem can be solved
+
     BlockVector u_block(block_offsets);
+
+    //physics tests
 
     //eigensolver TBD
 
@@ -255,10 +244,10 @@ int main(int agrc, char *argv[]){
 }
 
 //solves preliminary laplace problem for the electric potential and then returns the resulting electric field
-Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// pass in boundary elements along with fes since it should match up with d-d problem 
+GridFunction electric_potential(int order, double V, double epsilon, FiniteElementSpace &fes, bool print_epot){// pass in boundary elements along with fes since it should match up with d-d problem 
 //permittivity
-    Mesh *mesh = fes.GetMesh();
-
+    //Mesh &mesh = fes.GetMesh();
+    Mesh &mesh = *fes.GetMesh();
     //Array<int> ess_bdr(mesh.bdr_attributes.Max());
      // ess_bdr = 1;
       //fespace.GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
@@ -285,14 +274,14 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
     //b.Assemble();
 
     //1D case
-/* 
-    Array<int> dir_attr(mesh->bdr_attributes.Max());
-    dir_attr = 1; //all attributes to be dirichlet's in 1d case only
-*/
-    // 2D case
 
-    Array<int> dir_attr(mesh->bdr_attributes.Max());
-    Array<int> neu_attr(mesh->bdr_attributes.Max());
+    Array<int> dir_attr(mesh.bdr_attributes.Max());
+    dir_attr = 1; //all attributes to be dirichlet's in 1d case only
+
+    // 2D case
+/*
+    Array<int> dir_attr(mesh.bdr_attributes.Max());
+    Array<int> neu_attr(mesh.bdr_attributes.Max());
 
     dir_attr = 0;
     neu_attr = 0;
@@ -302,16 +291,16 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
 
     neu_attr[1] = 1;
     neu_attr[3] = 1;
-
+*/
     //cout << "boundary attr: " << endl;
    // for(int i=0;i<bdr_attr.Size();i++)
     //    cout << bdr_attr[i] << endl;
 
-    Array<int> anode_mkr(mesh->bdr_attributes.Max());
-    Array<int> cathode_mkr(mesh->bdr_attributes.Max());
+    Array<int> anode_mkr(mesh.bdr_attributes.Max());
+    Array<int> cathode_mkr(mesh.bdr_attributes.Max());
 
-    //lap_1d_bc(anode_mkr, cathode_mkr);
-    lap_2d_bc(anode_mkr,cathode_mkr);
+    lap_1d_bc(anode_mkr, cathode_mkr);
+    //lap_2d_bc(anode_mkr,cathode_mkr);
     
     u.ProjectBdrCoefficient(VCoef,anode_mkr);
     u.ProjectBdrCoefficient(zero,cathode_mkr);
@@ -341,16 +330,16 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
     Vector u_nodes;
     u.GetNodalValues(u_nodes,1);
 
-    cout << "u final:"<< endl;
+    cout << "u final nodal:"<< endl;
 
     for(int i=0;i < u_nodes.Size();i++)
         cout << u_nodes[i] << endl;
 
     //GradientGridFunctionCoefficient E(&u); //will have to work on
 
-    GridFunction E(&fes);
+    //GridFunction E(&fes);
 
-    u.GetDerivative(1,0,E); //works for 1d. (comp,der_comp,&der) comp = 1 for scalar func, der_comp = 0,1,2 for x,y,z
+   // u.GetDerivative(1,0,E); //works for 1d. (comp,der_comp,&der) comp = 1 for scalar func, der_comp = 0,1,2 for x,y,z
    
     //Vector E_nodes;
    // E.GetNodalValues(E_nodes,1);
@@ -359,15 +348,31 @@ Vector E_field(int order, double V, double epsilon, FiniteElementSpace fes){// p
     //for(int i=0;i<E_nodes.Size();i++)
       //  cout << E_nodes[i] << endl;
 
-    cout << "vector dim " << endl;
-    cout << E.VectorDim() << endl;
+   //cout << "vector dim " << endl;
+    //cout << E.VectorDim() << endl;
 
-    Vector E_vec = E.GetTrueVector();
-    cout << "E_vec:" << endl;
-    for(int i; i < E_vec.Size();i++)
-        cout << E_vec[i] << endl;
+    //Vector E_vec = E.GetTrueVector();
+    //cout << "E_vec:" << endl;
+    //for(int i; i < E_vec.Size();i++)
+     //   cout << E_vec[i] << endl;
 
-    return E_vec;
+     //cout << "electric potential u:" << endl;
+     //cout << u << endl;
+
+     // for diagnostic purposes
+     if(print_epot)
+     {
+        DataCollection *dc = NULL;
+        dc = new VisItDataCollection("Electric_Potential",&mesh);
+        dc->SetPrecision(8);
+        dc->RegisterField("solution",&u);
+        dc->Save();
+        delete dc;
+     }
+
+     cout << "GetNE check : " << mesh.GetNE() << endl;
+
+    return u;
 }
 
 //returns the correct boundary markers for the cathode and anode of the 1D problem
@@ -393,8 +398,7 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 
 }
 
+void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J){
 
-
-
-//define list of parameters
+}
 

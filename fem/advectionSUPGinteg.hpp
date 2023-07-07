@@ -38,7 +38,7 @@ private:
     
     VectorCoefficient* bdfVec;
   
-    Coefficient* nuCoef;
+    Coefficient* TFact;
     Coefficient* DiffCoef; //diffusion coefficient
     
     double eleLength , eleVol;
@@ -58,12 +58,12 @@ private:
                                     ElementTransformation &Tr,
                                     DenseMatrix &elmat);
    
-    void CalculateTaus(const double normVel, const double Diff, double& tauSUPG);
+    void CalculateTau(const double normVel, const double Diff, double& tauSUPG);
     
 public:
-    AdvectionSUPGIntegrator(VectorCoefficient &exBodyForce, 
-          double ViscCoef, double diffusion) : bdfVec(&exBodyForce){
-           nuCoef = new ConstantCoefficient(ViscCoef);
+    AdvectionSUPGIntegrator(VectorCoefficient &advectionVelocity, 
+          double TauFactor, ConstantCoefficient diffusion) : bdfVec(&advectionVelocity){
+           TFact = new ConstantCoefficient(TauFactor);
            DiffCoef = new ConstantCoefficient(diffusion);
           }
           

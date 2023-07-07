@@ -128,8 +128,8 @@ namespace mfem
                 Trans.SetIntPoint(&ip);
                 CalcAdjugate(Trans.Jacobian(), adjJ);
                 bdfVec_ir.GetColumnReference(i, vecRef);
-                double nu = nuCoef->Eval(Trans,ip);
-                vecRef *= nu * ip.weight;
+                //double nu = nuCoef->Eval(Trans,ip);
+                vecRef *= ip.weight;
 
                 adjJ.Mult(vecRef, vecPhys);
                 dshape.Mult(vecPhys, BdFidxT);
@@ -162,6 +162,7 @@ namespace mfem
                 int order = Trans.OrderGrad(&el) + Trans.Order() + el.GetOrder();
                 ir = &IntRules.Get(el.GetGeomType(), order);
             }
+
             bdfVec->Eval(bdfVec_ir,Trans, *ir);
 
             //elmat = 0.0; //might need to change if including convection term in this class
@@ -175,25 +176,27 @@ namespace mfem
                 Trans.SetIntPoint(&ip);
                 CalcAdjugate(Trans.Jacobian(), adjJ);
                 bdfVec_ir.GetColumnReference(i,vecRef);
-                double nu = nuCoef->Eval(Trans,ip);//changed from viscosity to scale factor; different purpose from original NS code
+                double tfact = TFact->Eval(Trans,ip);//changed from viscosity to scale factor; different purpose from original NS code
                 double Diff = DiffCoef->Eval(Trans,ip);
                 double vNorm = vecRef.Norml2();
                 double tauSUPG;
 
-                CalculateTaus(vNorm, Diff, tauSUPG);
+                CalculateTau(vNorm, Diff, tauSUPG);
+
+                dshape.Mult(vecRef,BdFidxT1);
                 
-                vecRef *= nu * ip.weight;
+                //vecRef *= tfact * ip.weight;
                 adjJ.Mult(vecRef,vecPhys); //retrieves physical vector from reference space; vec1 is also normalized, scaled, and stabilized
+                vecPhys *= tfact * tauSUPG * ip.weight ;
                 //computing both advection terms
                 dshape.Mult(vecPhys, BdFidxT1);
-                BdFidxT1 *= tauSUPG;
-                dshape.Mult(vecPhys, BdFidxT2);
+                dshape.Mult(vecRef, BdFidxT2);
 
                 AddMultVWt(BdFidxT2,BdFidxT1, elmat);
             }
         }
 
-        void AdvectionSUPGIntegrator::CalculateTaus(
+        void AdvectionSUPGIntegrator::CalculateTau(
         const double normVel, const double Diff ,double& tauSUPG)
         {
             
