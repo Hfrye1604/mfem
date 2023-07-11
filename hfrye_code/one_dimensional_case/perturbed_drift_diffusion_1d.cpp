@@ -91,14 +91,14 @@ int main(int agrc, char *argv[]){
     GridFunction e_pot = electric_potential(order,V,epsilon,fespace,true);
     GradientGridFunctionCoefficient E(&e_pot);
     
-    //TODO: come up with alternative to keep v_s as gridfunctions; alternatively set below coefficients with grid functions
     ScalarVectorProductCoefficient v_e(mu_e,E);
     ScalarVectorProductCoefficient v_p(mu_p,E);
 
-    //TODO: higher dim results in assertion error; dofs are mismatched
-    GridFunction v_e_grid(&fespace);
+    FiniteElementSpace Vfespace(&mesh,&fec,dim);
+
+    GridFunction v_e_grid(&Vfespace);
     v_e_grid.ProjectCoefficient(v_e);
-    GridFunction v_p_grid(&fespace);
+    GridFunction v_p_grid(&Vfespace);
     v_p_grid.ProjectCoefficient(v_p);
 
     DivergenceGridFunctionCoefficient div_v_e(&v_e_grid);
@@ -141,18 +141,20 @@ int main(int agrc, char *argv[]){
 
     M.AddDomainIntegrator(new MassIntegrator); //same for both equations
    
-    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,1.0,diff_const_e));//note that SUPG tau is dependant on diffusion
+    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,0.0,diff_const_e));//note that SUPG tau is dependant on diffusion
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
     Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
+
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
     Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma), cathode_bdr);
-    //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
-    See.AddDomainIntegrator(new MassIntegrator(SeeTot));
-    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
+    Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
+    
+    See.AddDomainIntegrator(new MassIntegrator(zero));
+    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,0.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
     Kp.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
-    Spe.AddDomainIntegrator(new MassIntegrator(SpeTot));
+    Spe.AddDomainIntegrator(new MassIntegrator(zero));
     
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
@@ -409,12 +411,11 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     P.SetDiagonalBlock(1,&M2);
 
     PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
+    //CG(J,rhs,n_block,1, 500, 1e-12, 0.0);
 
     n_e.MakeRef(&fes,n_block.GetBlock(0),0);
     n_p.MakeRef(&fes,n_block.GetBlock(1),0);
 
-
-    
 /*
     LinearForm *e_source(new LinearForm);
     e_source->Update(fes,rhs.GetBlock(0),0);
@@ -427,7 +428,7 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     p_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
     p_source->Assemble();
     p_source->SyncAliasMemory(rhs);
-    */
+*/
     
     DataCollection *dc = NULL;
     dc = new VisItDataCollection("Time_ind_diff",&mesh);

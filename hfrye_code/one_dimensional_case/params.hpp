@@ -11,7 +11,7 @@ namespace mfem
     double epsilon = 1.0;//permittivity
 
     ConstantCoefficient mu_e(1.0); //Mobility coefficents
-    ConstantCoefficient mu_p(0.5); 
+    ConstantCoefficient mu_p(1.0); 
 
     ConstantCoefficient diff_const_e(1.0); //diffusion coefficients
     ConstantCoefficient diff_const_p(2.0);
@@ -22,7 +22,7 @@ namespace mfem
     ConstantCoefficient Alpha(1.0); //ionization coefficient
     ConstantCoefficient Eta(1.0); //attachment coefficient
     ConstantCoefficient Beta(1.0); //recombination coefficient; not used in perturbation equations
-    ConstantCoefficient Gamma(.1); //secondary electron emission coefficient
+    ConstantCoefficient Gamma(0.0); //secondary electron emission coefficient
 
     ConstantCoefficient zero(0.0);
 
