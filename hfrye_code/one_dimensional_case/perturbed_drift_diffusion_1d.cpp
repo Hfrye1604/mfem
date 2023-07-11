@@ -19,9 +19,9 @@ GridFunction electric_potential(int, double, double, FiniteElementSpace&, bool);
 
 //Checks for Physics in limits of drift-diffusion equation
 //BCs are kept dirichlets homogenous 
-void time_indep_diffusion(FiniteElementSpace&, BlockMatrix&);//elliptic problem
-void time_dep_diffusion(FiniteElementSpace&, BlockMatrix&);//parabolic problem
-void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&);//
+void time_indep_diffusion(FiniteElementSpace&, BlockMatrix&,Array<int> &);//elliptic problem
+void time_dep_diffusion(FiniteElementSpace&, BlockMatrix&,Array<int> &);//parabolic problem
+void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&,Array<int> &);//
 
 //return correct boundary markers for problem
 void lap_1d_bc(Array<int> &anode, Array<int> &cathode);
@@ -53,10 +53,9 @@ if(dim == 1){
 }
 }
 
-
 int main(int agrc, char *argv[]){
-    //const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
-    const char *mesh_file = "../../data/inline-segment.mesh";
+    const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
+    //const char *mesh_file = "../../data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
 
     //time integrator for model verification purposes, perturbation equations might carry little physical meaning integrated like this however.
@@ -77,6 +76,7 @@ int main(int agrc, char *argv[]){
     H1_FECollection fec(order,dim); //Gauss-Legendre unsupported
     FiniteElementSpace fespace(&mesh,&fec);
     cout << "Number of unknowns: " << fespace.GetTrueVSize() << endl;
+    cout << "Vector Dim: " << fespace.GetVDim() << endl;
 
     //boundary markers for cathode and anode
     //For 1D case
@@ -91,24 +91,31 @@ int main(int agrc, char *argv[]){
     GridFunction e_pot = electric_potential(order,V,epsilon,fespace,true);
     GradientGridFunctionCoefficient E(&e_pot);
     
-    //TODO: come up with alternative to keep v_s as gridfunctions
+    //TODO: come up with alternative to keep v_s as gridfunctions; alternatively set below coefficients with grid functions
     ScalarVectorProductCoefficient v_e(mu_e,E);
     ScalarVectorProductCoefficient v_p(mu_p,E);
 
-    DivergenceGridFunctionCoefficient div_v_e(v_e);
-    DivergenceGridFunctionCoefficient div_v_p(v_p);
+    //TODO: higher dim results in assertion error; dofs are mismatched
+    GridFunction v_e_grid(&fespace);
+    v_e_grid.ProjectCoefficient(v_e);
+    GridFunction v_p_grid(&fespace);
+    v_p_grid.ProjectCoefficient(v_p);
+
+    DivergenceGridFunctionCoefficient div_v_e(&v_e_grid);
+    DivergenceGridFunctionCoefficient div_v_p(&v_p_grid);
 
     //Computing L2 norms of velocities
     InnerProductCoefficient v_e_mag_sqr(v_e,v_e);
-    PowerCoefficient v_e_mag(v_e_mag,0.5);
+    PowerCoefficient v_e_mag(v_e_mag_sqr,0.5);
 
     InnerProductCoefficient v_p_mag_sqr(v_p,v_p);
-    PowerCoefficient v_p_mag(v_p_mag,0.5);
+    PowerCoefficient v_p_mag(v_p_mag_sqr,0.5);
 
     SumCoefficient alpha_min_eta(Alpha,Eta,1.0,-1.0);
-    ProductCoefficient ame_ve_mag(alpha_min_eta,v_e_mag);
+    ProductCoefficient ame_ve_mag(alpha_min_eta,v_e_mag);//alpha minus eta times magnitude v_e
 
     ProductCoefficient alpha_ve_mag(Alpha,v_e_mag);
+
     // constants to be multiplied into mass matrices for S matrices
     SumCoefficient SeeTot(ame_ve_mag,div_v_e,1.0,-1.0);
     SumCoefficient SpeTot(alpha_ve_mag,div_v_p,1.0,-1.0);
@@ -136,9 +143,9 @@ int main(int agrc, char *argv[]){
    
     Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,1.0,diff_const_e));//note that SUPG tau is dependant on diffusion
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
-    Kee.AddBoundaryIntegrator(new MassIntegrator,cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
+    Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
-    Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma),cathode_bdr);
+    Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma), cathode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
     See.AddDomainIntegrator(new MassIntegrator(SeeTot));
     Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
@@ -171,15 +178,6 @@ int main(int agrc, char *argv[]){
     J11.Add(-1.0,De.SpMat());
     J11.Add(1.0,Kee.SpMat());
     J11.Add(1.0,See.SpMat());
-/*
-    J11.Finalize();
-
-cout << "J11 matrix" << endl;
-for(int i =0;i<J11.Size();i++)
-    for(int j=0;j<J11.Size();i++)
-        cout << J11.Elem(i,j) <<" "<< endl;
-*/
-
 
     SparseMatrix J12; 
     J12 = Kep.SpMat();
@@ -233,6 +231,8 @@ for(int i =0;i<J11.Size();i++)
     BlockVector u_block(block_offsets);
 
     //physics tests
+
+    time_indep_diffusion(fespace, Block_Jacobian, block_offsets);//elliptic problem
 
     //eigensolver TBD
 
@@ -335,30 +335,6 @@ GridFunction electric_potential(int order, double V, double epsilon, FiniteEleme
     for(int i=0;i < u_nodes.Size();i++)
         cout << u_nodes[i] << endl;
 
-    //GradientGridFunctionCoefficient E(&u); //will have to work on
-
-    //GridFunction E(&fes);
-
-   // u.GetDerivative(1,0,E); //works for 1d. (comp,der_comp,&der) comp = 1 for scalar func, der_comp = 0,1,2 for x,y,z
-   
-    //Vector E_nodes;
-   // E.GetNodalValues(E_nodes,1);
-
-    //cout << "E field" << endl;
-    //for(int i=0;i<E_nodes.Size();i++)
-      //  cout << E_nodes[i] << endl;
-
-   //cout << "vector dim " << endl;
-    //cout << E.VectorDim() << endl;
-
-    //Vector E_vec = E.GetTrueVector();
-    //cout << "E_vec:" << endl;
-    //for(int i; i < E_vec.Size();i++)
-     //   cout << E_vec[i] << endl;
-
-     //cout << "electric potential u:" << endl;
-     //cout << u << endl;
-
      // for diagnostic purposes
      if(print_epot)
      {
@@ -398,7 +374,68 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 
 }
 
-void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J){
+//Where time derivative in equations go to zero, and velocity is set to zero
+void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &offsets){
+    Mesh &mesh = *fes.GetMesh();
+
+    GridFunction n_e;
+    n_e = 0.0;
+
+    GridFunction n_p;
+    n_p = 0.0;
+
+    //MemoryType mt = device.GetMemoryType();
+    BlockVector n_block(offsets), rhs(offsets);
+    n_block = 0;
+
+    ConstantCoefficient one(1.0);
+    LinearForm e_source(&fes);
+    e_source.AddDomainIntegrator(new DomainLFIntegrator(one));
+    e_source.Assemble();
+
+    LinearForm p_source(&fes);
+    p_source.AddDomainIntegrator(new DomainLFIntegrator(zero));
+    p_source.Assemble();
+
+    rhs.GetBlock(0)=e_source;
+    rhs.GetBlock(1)=p_source;
+
+    GSSmoother M1(J.GetBlock(0,0));
+    GSSmoother M2(J.GetBlock(1,1));
+    
+    BlockDiagonalPreconditioner P(offsets);
+
+    P.SetDiagonalBlock(0,&M1);
+    P.SetDiagonalBlock(1,&M2);
+
+    PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
+
+    n_e.MakeRef(&fes,n_block.GetBlock(0),0);
+    n_p.MakeRef(&fes,n_block.GetBlock(1),0);
+
+
+    
+/*
+    LinearForm *e_source(new LinearForm);
+    e_source->Update(fes,rhs.GetBlock(0),0);
+    e_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
+    e_source->Assemble();
+    e_source->SyncAliasMemory(rhs);
+
+    LinearForm *p_source(new LinearForm);
+    p_source->Update(fes,rhs.GetBlock(1),0);
+    p_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
+    p_source->Assemble();
+    p_source->SyncAliasMemory(rhs);
+    */
+    
+    DataCollection *dc = NULL;
+    dc = new VisItDataCollection("Time_ind_diff",&mesh);
+    dc->SetPrecision(8);
+    dc->RegisterField("solution_e",&n_e);
+    dc->RegisterField("solution_p",&n_p);
+    dc->Save();
+    delete dc;
 
 }
 

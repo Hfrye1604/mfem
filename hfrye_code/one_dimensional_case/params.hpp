@@ -22,7 +22,7 @@ namespace mfem
     ConstantCoefficient Alpha(1.0); //ionization coefficient
     ConstantCoefficient Eta(1.0); //attachment coefficient
     ConstantCoefficient Beta(1.0); //recombination coefficient; not used in perturbation equations
-    ConstantCoefficient Gamma(.1); //secondary electron emission
+    ConstantCoefficient Gamma(.1); //secondary electron emission coefficient
 
     ConstantCoefficient zero(0.0);
 
