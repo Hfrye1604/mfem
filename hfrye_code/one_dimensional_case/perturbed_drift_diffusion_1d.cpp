@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include "params.hpp"
+//#include <lapack>
 
 using namespace std;
 using namespace mfem;
@@ -141,20 +142,21 @@ int main(int agrc, char *argv[]){
 
     M.AddDomainIntegrator(new MassIntegrator); //same for both equations
    
-    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,0.0,diff_const_e));//note that SUPG tau is dependant on diffusion
+    Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,1.0,diff_const_e));//note that SUPG tau is dependant on diffusion
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
 
     Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
+
     Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma), cathode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
 
-    See.AddDomainIntegrator(new MassIntegrator(zero));
-    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,0.0,diff_const_p));
+    See.AddDomainIntegrator(new MassIntegrator(SeeTot));
+    Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
     Kp.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
-    Spe.AddDomainIntegrator(new MassIntegrator(zero));
+    Spe.AddDomainIntegrator(new MassIntegrator(SpeTot));
     
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
@@ -236,7 +238,7 @@ int main(int agrc, char *argv[]){
 
     time_indep_diffusion(fespace, Block_Jacobian, block_offsets);//elliptic problem
 
-    //eigensolver TBD
+    //eigensolver slepc
 
    //ofstream meshfile;
     //meshfile.open("mesh.dat");
@@ -380,16 +382,14 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &offsets){
     Mesh &mesh = *fes.GetMesh();
 cout << "Here?" << endl;
-    GridFunction n_e;
-    n_e = 0.0;
-
-    GridFunction n_p;
+    GridFunction n_e(&fes), n_p(&fes);
+    n_e = 1.0;
     n_p = 0.0;
 
     //MemoryType mt = device.GetMemoryType();
     BlockVector n_block(offsets), rhs(offsets);
-    n_block = 0;
-/*
+    //n_block = 0;
+
     ConstantCoefficient one(1.0);
     LinearForm e_source(&fes);
     e_source.AddDomainIntegrator(new DomainLFIntegrator(one));
@@ -398,10 +398,23 @@ cout << "Here?" << endl;
     LinearForm p_source(&fes);
     p_source.AddDomainIntegrator(new DomainLFIntegrator(zero));
     p_source.Assemble();
-*/
+
+    //init rhs of test problem
+    rhs = 0.0;
+    rhs.GetBlock(0) = e_source;
+    rhs.GetBlock(1) = p_source;
+
+    //init solutions
+    n_block.GetBlock(0) = n_e;
+    n_block.GetBlock(1) = n_p;
+
+    //ensuring homogenous Dirichlet boundary conditions
+    Array<int> ess_bdr(mesh.bdr_attributes.Max());
+    ess_bdr = 1;
+
    // rhs.Update(e_source,offsets[0]);
    // rhs.Update(p_source, offsets[1]);
-    
+/*
     LinearForm *e_source(new LinearForm);
     e_source->Update(fes,rhs.GetBlock(0),0);
     e_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
@@ -413,7 +426,7 @@ cout << "Here?" << endl;
     p_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
     p_source->Assemble();
     p_source->SyncAliasMemory(rhs);
-
+*/
 
 /*
     GSSmoother M1(J.GetBlock(0,0));
@@ -427,21 +440,22 @@ cout << "Here?" << endl;
     PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
     //CG(J,rhs,n_block,1, 500, 1e-12, 0.0);
 */
-cout << "Here??" << endl;
-    SparseMatrix *JSp = J.CreateMonolithic();
-cout << "Here???" << endl;
-    MatrixInverse *Jinv = JSp->Inverse();
-cout << "Here????" << endl;
-//cout << "Jinv height: " << Jinv->Height() << " Jinv width: "<<Jinv->Width() << endl;
-//cout << "rhs hieght: " << rhs.Size() << endl;
-cout << "Here?????" << endl;
-    Jinv->Mult(rhs,n_block);
-cout << "Here??????" << endl;
+
+    cout << "n_block BlockVector check : " << n_block.Size()<< endl;
+    for(int i = 0; i < n_block.Size(); i++ )
+        cout << n_block[i] << endl;
+
+    cout << "rhs BlockVector check : " << rhs.Size()<< endl;
+    for(int i = 0; i < rhs.Size(); i++ )
+        cout << rhs[i] << endl;
+
+    UMFPackSolver solver;
+    solver.SetOperator(J);
+    solver.Mult(rhs, n_block);
 
     n_e.MakeRef(&fes,n_block.GetBlock(0),0);
     n_p.MakeRef(&fes,n_block.GetBlock(1),0);
 
-    
     DataCollection *dc = NULL;
     dc = new VisItDataCollection("Time_ind_diff",&mesh);
     dc->SetPrecision(8);
