@@ -143,12 +143,12 @@ int main(int agrc, char *argv[]){
    
     Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,0.0,diff_const_e));//note that SUPG tau is dependant on diffusion
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
-    Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
 
+    Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
     Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma), cathode_bdr);
-    Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
-    
+    //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
+
     See.AddDomainIntegrator(new MassIntegrator(zero));
     Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,0.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
@@ -379,7 +379,7 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 //Where time derivative in equations go to zero, and velocity is set to zero
 void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &offsets){
     Mesh &mesh = *fes.GetMesh();
-
+cout << "Here?" << endl;
     GridFunction n_e;
     n_e = 0.0;
 
@@ -389,7 +389,7 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     //MemoryType mt = device.GetMemoryType();
     BlockVector n_block(offsets), rhs(offsets);
     n_block = 0;
-
+/*
     ConstantCoefficient one(1.0);
     LinearForm e_source(&fes);
     e_source.AddDomainIntegrator(new DomainLFIntegrator(one));
@@ -398,25 +398,10 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     LinearForm p_source(&fes);
     p_source.AddDomainIntegrator(new DomainLFIntegrator(zero));
     p_source.Assemble();
-
-    rhs.GetBlock(0)=e_source;
-    rhs.GetBlock(1)=p_source;
-
-    GSSmoother M1(J.GetBlock(0,0));
-    GSSmoother M2(J.GetBlock(1,1));
+*/
+   // rhs.Update(e_source,offsets[0]);
+   // rhs.Update(p_source, offsets[1]);
     
-    BlockDiagonalPreconditioner P(offsets);
-
-    P.SetDiagonalBlock(0,&M1);
-    P.SetDiagonalBlock(1,&M2);
-
-    PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
-    //CG(J,rhs,n_block,1, 500, 1e-12, 0.0);
-
-    n_e.MakeRef(&fes,n_block.GetBlock(0),0);
-    n_p.MakeRef(&fes,n_block.GetBlock(1),0);
-
-/*
     LinearForm *e_source(new LinearForm);
     e_source->Update(fes,rhs.GetBlock(0),0);
     e_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
@@ -428,7 +413,34 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     p_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
     p_source->Assemble();
     p_source->SyncAliasMemory(rhs);
+
+
+/*
+    GSSmoother M1(J.GetBlock(0,0));
+    GSSmoother M2(J.GetBlock(1,1));
+    
+    BlockDiagonalPreconditioner P(offsets);
+
+    P.SetDiagonalBlock(0,&M1);
+    P.SetDiagonalBlock(1,&M2);
+
+    PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
+    //CG(J,rhs,n_block,1, 500, 1e-12, 0.0);
 */
+cout << "Here??" << endl;
+    SparseMatrix *JSp = J.CreateMonolithic();
+cout << "Here???" << endl;
+    MatrixInverse *Jinv = JSp->Inverse();
+cout << "Here????" << endl;
+//cout << "Jinv height: " << Jinv->Height() << " Jinv width: "<<Jinv->Width() << endl;
+//cout << "rhs hieght: " << rhs.Size() << endl;
+cout << "Here?????" << endl;
+    Jinv->Mult(rhs,n_block);
+cout << "Here??????" << endl;
+
+    n_e.MakeRef(&fes,n_block.GetBlock(0),0);
+    n_p.MakeRef(&fes,n_block.GetBlock(1),0);
+
     
     DataCollection *dc = NULL;
     dc = new VisItDataCollection("Time_ind_diff",&mesh);
