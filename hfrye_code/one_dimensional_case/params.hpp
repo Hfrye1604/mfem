@@ -14,7 +14,7 @@ namespace mfem
     ConstantCoefficient mu_p(1.0); 
 
     ConstantCoefficient diff_const_e(1.0); //diffusion coefficients
-    ConstantCoefficient diff_const_p(2.0);
+    ConstantCoefficient diff_const_p(1.0);
 
     //both mobility and diffusion coefficients may not be constant depending on problem domain
 

@@ -10,7 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include "params.hpp"
-//#include <lapack>
+#include "fe_evolution.hpp"
 
 using namespace std;
 using namespace mfem;
@@ -21,8 +21,8 @@ GridFunction electric_potential(int, double, double, FiniteElementSpace&, bool);
 //Checks for Physics in limits of drift-diffusion equation
 //BCs are kept dirichlets homogenous 
 void time_indep_diffusion(FiniteElementSpace&, BlockMatrix&,Array<int> &);//elliptic problem
-void time_dep_diffusion(FiniteElementSpace&, BlockMatrix&,Array<int> &);//parabolic problem
-void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&,Array<int> &);//
+void time_dep_diffusion(FiniteElementSpace&, BlockMatrix&,BlockMatrix&, Array<int> &);//parabolic problem
+void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&, BlockMatrix&, Array<int> &);//
 
 //return correct boundary markers for problem
 void lap_1d_bc(Array<int> &anode, Array<int> &cathode);
@@ -54,14 +54,26 @@ if(dim == 1){
 }
 }
 
+double time_indep_diff_ic(const Vector &x){
+    int dim = x.Size();
+    Vector X(dim);
+
+    if(dim == 1){
+        return 1.0;
+    } else if(dim == 2){
+        //v(0) = sin(M_PI*X(0));
+        //v(1) = sin(M_PI*X(1));
+        return  sin(M_PI*X(0)) + sin(M_PI*X(1));
+    } else {
+    cout << "dimension size not implmeneted yet. Aborting..."<<endl;
+    return 1;
+    }
+}
+
 int main(int agrc, char *argv[]){
     const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
     //const char *mesh_file = "../../data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
-
-    //time integrator for model verification purposes, perturbation equations might carry little physical meaning integrated like this however.
-    ODESolver *ode_solver = NULL;
-    ode_solver = new BackwardEulerSolver;
 
     //Define Mesh 
     Mesh mesh(mesh_file);
@@ -86,7 +98,7 @@ int main(int agrc, char *argv[]){
     cathode_bdr =0;
     anode_bdr = 0;
     cathode_bdr[0]=1;
-    anode_bdr[1]=1; //change for 2d
+    anode_bdr[2]=1; //change for 2d
     //E_field for 1d
 
     GridFunction e_pot = electric_potential(order,V,epsilon,fespace,true);
@@ -277,34 +289,41 @@ GridFunction electric_potential(int order, double V, double epsilon, FiniteEleme
     b.AddDomainIntegrator(new DomainLFIntegrator(zero));
     //b.Assemble();
 
-    //1D case
+    Array<int> anode_mkr(mesh.bdr_attributes.Max());
+    Array<int> cathode_mkr(mesh.bdr_attributes.Max());
 
+    cout << "mesh dimension: " << mesh.Dimension() << endl;
+    int dim = 2;
+
+    //if(dim==1){
+    //1D case
+/*
     Array<int> dir_attr(mesh.bdr_attributes.Max());
     dir_attr = 1; //all attributes to be dirichlet's in 1d case only
 
+    lap_1d_bc(anode_mkr, cathode_mkr);
+*/
+   // } else if(dim==2){
     // 2D case
-/*
+
     Array<int> dir_attr(mesh.bdr_attributes.Max());
-    Array<int> neu_attr(mesh.bdr_attributes.Max());
+    //Array<int> neu_attr(mesh.bdr_attributes.Max());
 
     dir_attr = 0;
-    neu_attr = 0;
+    //neu_attr = 0;
 
     dir_attr[0] = 1;
     dir_attr[2] = 1;
 
+    lap_2d_bc(anode_mkr,cathode_mkr);
+  //  }
+/*
     neu_attr[1] = 1;
     neu_attr[3] = 1;
 */
     //cout << "boundary attr: " << endl;
    // for(int i=0;i<bdr_attr.Size();i++)
     //    cout << bdr_attr[i] << endl;
-
-    Array<int> anode_mkr(mesh.bdr_attributes.Max());
-    Array<int> cathode_mkr(mesh.bdr_attributes.Max());
-
-    lap_1d_bc(anode_mkr, cathode_mkr);
-    //lap_2d_bc(anode_mkr,cathode_mkr);
     
     u.ProjectBdrCoefficient(VCoef,anode_mkr);
     u.ProjectBdrCoefficient(zero,cathode_mkr);
@@ -381,10 +400,7 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 //Where time derivative in equations go to zero, and velocity is set to zero
 void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &offsets){
     Mesh &mesh = *fes.GetMesh();
-cout << "Here?" << endl;
     GridFunction n_e(&fes), n_p(&fes);
-    n_e = 1.0;
-    n_p = 0.0;
 
     //MemoryType mt = device.GetMemoryType();
     BlockVector n_block(offsets), rhs(offsets);
@@ -396,7 +412,7 @@ cout << "Here?" << endl;
     e_source.Assemble();
 
     LinearForm p_source(&fes);
-    p_source.AddDomainIntegrator(new DomainLFIntegrator(zero));
+    p_source.AddDomainIntegrator(new DomainLFIntegrator(one));
     p_source.Assemble();
 
     //init rhs of test problem
@@ -449,9 +465,15 @@ cout << "Here?" << endl;
     for(int i = 0; i < rhs.Size(); i++ )
         cout << rhs[i] << endl;
 
+/* SuiteSparse not downloaded
     UMFPackSolver solver;
     solver.SetOperator(J);
     solver.Mult(rhs, n_block);
+*/
+
+    SparseMatrix *JSp = J.CreateMonolithic();
+    GSSmoother M(*JSp);
+    GMRES(*JSp,M,rhs,n_block, 1, 500, 10, 1e-12, 0.0);
 
     n_e.MakeRef(&fes,n_block.GetBlock(0),0);
     n_p.MakeRef(&fes,n_block.GetBlock(1),0);
@@ -465,4 +487,66 @@ cout << "Here?" << endl;
     delete dc;
 
 }
+
+void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M, Array<int> &offsets){
+    Mesh &mesh = *fes.GetMesh();
+    GridFunction n_e(&fes), n_p(&fes);
+
+    int dim = mesh.Dimension();
+
+    SparseMatrix JSp = J.CreateMonolithic();
+    SparseMatrix M = M.CreateMonolithic();
+
+    ODESolver *ode_solver = new BackwardEulerSolver;
+
+    FunctionCoefficient ne_0(time_indep_diff_ic);
+    FunctionCoefficient np_0(time_indep_diff_ic);
+
+    n_e.ProjectCoefficient(ne_0);
+    n_p.ProjectCoefficient(np_0);
+
+    //TODO:define block vector
+
+    LinearForm b(&fes);
+    b.AddDomainIntegrator(new DomainLFIntegrator(zero));
+    b.Assemble();
+
+    FE_evolution diff(MSp,JSp,b);
+
+    double t = 0.0;
+    diff.SetTime(t);
+    ode_solver->Init(diff);
+
+    DataCollection *dc = NULL;
+    dc = new VisItDataCollection("Time_dependant_diffusion", &mesh);
+    int precision = 8;
+    dc->SetPrecision(precision);
+
+    //double t_final = 10.0;
+    //double dt = 0.01;
+    vis_steps = 5;
+    bool done = false;
+    for (int ti = 0; !done; )
+    {
+        double dt_real = min(dt, t_final - t);
+        ode_solver->Step(u, t, dt_real);
+        ti++;
+
+        done = (t >= t_final - 1e-8*dt);
+
+        if (done || ti % vis_steps == 0)
+        {
+            cout << "time step: " << ti << ", time: " << t << endl;
+
+                dc->SetCycle(ti);
+                dc->SetTime(t);
+                dc->Save();
+        }
+    }
+
+    delete ode_solver;
+    delete dc;
+
+}
+
 
