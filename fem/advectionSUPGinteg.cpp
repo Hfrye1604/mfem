@@ -188,7 +188,7 @@ namespace mfem
                 //vecRef *= tfact * ip.weight;
                 adjJ.Mult(vecRef,vecPhys); //retrieves physical vector from reference space; vec1 is also normalized, scaled, and stabilized
                 vecPhys *= tfact * tauSUPG * ip.weight ;
-                //computing both advection terms
+                //computing both Div terms
                 dshape.Mult(vecPhys, BdFidxT1);
                 dshape.Mult(vecRef, BdFidxT2);
 
@@ -201,13 +201,14 @@ namespace mfem
         {
             
             tauSUPG = 0.0;
-
-            double alpha = (normVel*eleLength)/(2.0*Diff);
-
-            double epsilon = (1.0/tanh(alpha)) - (1.0/alpha);//Shibata paper
             
-            tauSUPG = eleLength/ (2.0 * normVel) * epsilon ;//+ 4.0 * nu / (eleLength * eleLength);     
-               
+            if(normVel != 0){
+                double alpha = (normVel*eleLength)/(2.0*Diff);
+
+                double epsilon = (1.0/tanh(alpha)) - (1.0/alpha);//Shibata paper
+                
+                tauSUPG = eleLength/ (2.0 * normVel) * epsilon ;//+ 4.0 * nu / (eleLength * eleLength);     
+            }  
         }
 
         AdvectionSUPGIntegrator::~AdvectionSUPGIntegrator(){

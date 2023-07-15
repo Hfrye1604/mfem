@@ -54,7 +54,7 @@ if(dim == 1){
 }
 }
 
-double time_indep_diff_ic(const Vector &x){
+double time_dep_diff_ic(const Vector &x){
     int dim = x.Size();
     Vector X(dim);
 
@@ -63,7 +63,8 @@ double time_indep_diff_ic(const Vector &x){
     } else if(dim == 2){
         //v(0) = sin(M_PI*X(0));
         //v(1) = sin(M_PI*X(1));
-        return  sin(M_PI*X(0)) + sin(M_PI*X(1));
+        return  sin(M_PI*x(0)) + sin(M_PI*x(1));
+        //return 0.0;
     } else {
     cout << "dimension size not implmeneted yet. Aborting..."<<endl;
     return 1;
@@ -157,18 +158,17 @@ int main(int agrc, char *argv[]){
     Ae.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_e,1.0,diff_const_e));//note that SUPG tau is dependant on diffusion
     De.AddDomainIntegrator(new DiffusionIntegrator(diff_const_e));   
 
-    Kee.AddBoundaryIntegrator(new MassIntegrator, cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
+    Kee.AddBoundaryIntegrator(new VectorNormedMassIntegrator(v_e,one), cathode_bdr); //TODO: will have to verify correct boundary term ;will need to split up into Kee and Kpe terms
     //Kee.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_e), cathode_bdr);
 
-    Kep.AddBoundaryIntegrator(new MassIntegrator(Gamma), cathode_bdr);
+    Kep.AddBoundaryIntegrator(new VectorNormedMassIntegrator(v_p,Gamma), cathode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
-
-    See.AddDomainIntegrator(new MassIntegrator(SeeTot));
+    See.AddDomainIntegrator(new MassIntegrator(zero));
     Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
-    Kp.AddBoundaryIntegrator(new MassIntegrator,anode_bdr);
+    Kp.AddBoundaryIntegrator(new VectorNormedMassIntegrator(v_p,one),anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
-    Spe.AddDomainIntegrator(new MassIntegrator(SpeTot));
+    Spe.AddDomainIntegrator(new MassIntegrator(zero));
     
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
@@ -231,8 +231,8 @@ int main(int agrc, char *argv[]){
 
     Block_Jacobian.Finalize();
 
-    for(int i =0;i<J11.Size()+J21.Size();i++)
-        cout << "Block Jacobian Diag: "<<Block_Jacobian.Elem(i,i)<<endl;
+   //for(int i =0;i<J11.Size()+J21.Size();i++)
+    //    cout << "Block Jacobian Diag: "<<Block_Jacobian.Elem(i,i)<<endl;
 
     SparseMatrix MassMat(M.SpMat());
 
@@ -249,6 +249,7 @@ int main(int agrc, char *argv[]){
     //physics tests
 
     time_indep_diffusion(fespace, Block_Jacobian, block_offsets);//elliptic problem
+    time_dep_diffusion(fespace, Block_Jacobian, Block_Mass, block_offsets);//parabolic problem
 
     //eigensolver slepc
 
@@ -494,45 +495,74 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
 
     int dim = mesh.Dimension();
 
-    SparseMatrix JSp = J.CreateMonolithic();
-    SparseMatrix M = M.CreateMonolithic();
+    SparseMatrix *JSp = J.CreateMonolithic();
+    SparseMatrix *MSp = M.CreateMonolithic();
 
     ODESolver *ode_solver = new BackwardEulerSolver;
 
-    FunctionCoefficient ne_0(time_indep_diff_ic);
-    FunctionCoefficient np_0(time_indep_diff_ic);
+    FunctionCoefficient ne_0(time_dep_diff_ic);
+    FunctionCoefficient np_0(time_dep_diff_ic);
 
     n_e.ProjectCoefficient(ne_0);
     n_p.ProjectCoefficient(np_0);
 
     //TODO:define block vector
+    BlockVector n_block(offsets), b(offsets);
+    n_block.GetBlock(0) = n_e;
+    n_block.GetBlock(1) = n_p;
 
-    LinearForm b(&fes);
-    b.AddDomainIntegrator(new DomainLFIntegrator(zero));
-    b.Assemble();
+    LinearForm b_e(&fes);
+    b_e.AddDomainIntegrator(new DomainLFIntegrator(zero));
+    b_e.Assemble();
 
-    FE_evolution diff(MSp,JSp,b);
+    LinearForm b_p(&fes);
+    b_p.AddDomainIntegrator(new DomainLFIntegrator(zero));
+    b_p.Assemble();
+
+    b.GetBlock(0) = b_e;
+    b.GetBlock(1) = b_p;
+//initial conditions
+    DataCollection *dc = NULL;
+    dc = new VisItDataCollection("Time_dep_diff_init",&mesh);
+    dc->SetPrecision(8);
+    dc->RegisterField("solution_e",&n_e);
+    dc->RegisterField("solution_p",&n_p);
+    dc->Save();
+
+    cout << "n_e init:"<<endl;
+    cout<< n_e << endl;
+
+    FE_Evolution diff(*MSp,*JSp,b);
 
     double t = 0.0;
     diff.SetTime(t);
     ode_solver->Init(diff);
 
+/* TODO: figure out how to save individual solutions in visit
     DataCollection *dc = NULL;
     dc = new VisItDataCollection("Time_dependant_diffusion", &mesh);
     int precision = 8;
     dc->SetPrecision(precision);
-
+*/
     //double t_final = 10.0;
     //double dt = 0.01;
-    vis_steps = 5;
+    int vis_steps = 5;
     bool done = false;
     for (int ti = 0; !done; )
     {
+        
         double dt_real = min(dt, t_final - t);
-        ode_solver->Step(u, t, dt_real);
+        ode_solver->Step(n_block, t, dt_real);
         ti++;
 
+        n_e.MakeRef(&fes,n_block.GetBlock(0),0);
+        n_p.MakeRef(&fes,n_block.GetBlock(1),0);
+
+        //cout << "n_e check" << n_e << endl;
+
         done = (t >= t_final - 1e-8*dt);
+
+        
 
         if (done || ti % vis_steps == 0)
         {
@@ -542,8 +572,22 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
                 dc->SetTime(t);
                 dc->Save();
         }
+        
     }
 
+    n_e.MakeRef(&fes,n_block.GetBlock(0),0);
+    n_p.MakeRef(&fes,n_block.GetBlock(1),0);
+
+    cout << "n_e final:"<<endl;
+    cout<< n_e << endl;
+
+    dc = NULL;
+    dc = new VisItDataCollection("Time_dep_diff_final",&mesh);
+    dc->SetPrecision(8);
+    dc->RegisterField("solution_e",&n_e);
+    dc->RegisterField("solution_p",&n_p);
+    dc->Save();
+    
     delete ode_solver;
     delete dc;
 

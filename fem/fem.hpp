@@ -48,6 +48,7 @@
 #include "dgmassinv.hpp"
 //#include "NSnonlininteg.hpp"//added for nonlinNSinteg
 #include "advectionSUPGinteg.hpp"
+#include "driftdiffusionboundaryinteg.hpp"
 
 #ifdef MFEM_USE_MPI
 #include "pfespace.hpp"
