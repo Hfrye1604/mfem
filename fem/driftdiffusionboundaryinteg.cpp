@@ -3,17 +3,18 @@
 
 namespace mfem
 {
-    void VectorNormedMassIntegrator::AssembleFaceMatrix(const FiniteElement &el1,
-                                   const FiniteElement &el2,
-                                   FaceElementTransformations &Trans,
+    void VectorNormedMassIntegrator::AssembleElementMatrix(const FiniteElement &el,
+                                   ElementTransformation &Trans,
                                    DenseMatrix &elmat)
         {
-            MFEM_ASSERT(Trans.Elem2No < 0,
-               "support for interior faces is not implemented");
+            //MFEM_ASSERT(Trans.Elem2No < 0,
+             //  "support for interior faces is not implemented");
 
-            int nd1 = el1.GetDof();
-            int dim = el1.GetDim();
+            int nd = el.GetDof();
+            int dim = Trans.GetSpaceDim();
             double w;
+
+            std::cout << "fem space dimension: "<<dim << std::endl;
 
             Vector normal(dim);
             Vector vecRef(dim);
@@ -23,17 +24,15 @@ namespace mfem
             Vector shape;
             #endif
 
-            elmat.SetSize(nd1);
-            shape.SetSize(nd1);
+            elmat.SetSize(nd);
+            shape.SetSize(nd);
 
             const IntegrationRule *ir = IntRule;
             if (ir == NULL)
             {
-                int order = 2 * el1.GetOrder();
-
-                ir = &IntRules.Get(Trans.GetGeometryType(), order);
+                int order = Trans.OrderGrad(&el) + Trans.Order() + el.GetOrder();
+                ir = &IntRules.Get(el.GetGeomType(), order);
             }
-
             Q->Eval(Q_ir,Trans, *ir);
 
             elmat = 0.0;
@@ -41,22 +40,22 @@ namespace mfem
             {
                 const IntegrationPoint &ip = ir->IntPoint(i);
 
-                // Set the integration point in the face and the neighboring element
-                Trans.SetAllIntPoints(&ip);
-
-                // Access the neighboring element's integration point
-                const IntegrationPoint &eip = Trans.GetElement1IntPoint();
-                el1.CalcShape(eip, shape);
+                Trans.SetIntPoint(&ip);
+                
+                el.CalcPhysShape(Trans, shape);
 
                 CalcOrtho(Trans.Jacobian(), normal); //may need to apply jacobian
                 normal *= ip.weight;
 
-                CalcAdjugate(Trans.Jacobian(), adjJ);
+                //CalcAdjugate(Trans.Jacobian(), adjJ);
+
                 Q_ir.GetColumnReference(i, vecRef);
 
-                adjJ.Mult(vecRef, vecPhys);
+                //adjJ.Mult(vecRef, vecPhys);
 
-                w = vecPhys*normal; 
+                w = vecRef*normal; 
+
+                std::cout << "vector normal: " << w << std::endl;
 
                 double k = Factor->Eval(Trans,ip);
                 w *= k;
@@ -72,5 +71,5 @@ namespace mfem
 
         };
 
-        VectorNormedMassIntegrator::~VectorNormedMassIntegrator(){}
+        VectorNormedMassIntegrator::~VectorNormedMassIntegrator(){};
 }

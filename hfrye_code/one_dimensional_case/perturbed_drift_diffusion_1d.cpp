@@ -12,6 +12,10 @@
 #include "params.hpp"
 #include "fe_evolution.hpp"
 
+#ifndef MFEM_USE_SLEPC
+#error This examples requires that MFEM is build with MFEM_USE_SLEPC=YES
+#endif
+
 using namespace std;
 using namespace mfem;
 
@@ -63,14 +67,22 @@ double time_dep_diff_ic(const Vector &x){
     } else if(dim == 2){
         //v(0) = sin(M_PI*X(0));
         //v(1) = sin(M_PI*X(1));
-        return  sin(M_PI*x(0)) + sin(M_PI*x(1));
+        //return  sin(M_PI*x(0)) + sin(M_PI*x(1));
         //return 0.0;
+        return exp((-pow(x(0)-0.5,2)/0.1)-(pow(x(1)-0.5,2)/0.1));
     } else {
     cout << "dimension size not implmeneted yet. Aborting..."<<endl;
     return 1;
     }
 }
+/*
+double noise_ic(const Vector &x){
+    int dim = x.Size();
+    Vector X(dim);
 
+
+}
+*/
 int main(int agrc, char *argv[]){
     const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
     //const char *mesh_file = "../../data/inline-segment.mesh";
@@ -81,7 +93,7 @@ int main(int agrc, char *argv[]){
 
     //Mesh mesh(10,1.0);
     // possibly refine mesh to increase resolution
-    //mesh.UniformRefinement();
+    mesh.UniformRefinement();
    // mesh.UniformRefinement();
 
     int dim = mesh.Dimension();
@@ -122,21 +134,21 @@ int main(int agrc, char *argv[]){
     InnerProductCoefficient v_e_mag_sqr(v_e,v_e);
     PowerCoefficient v_e_mag(v_e_mag_sqr,0.5);
 
-    InnerProductCoefficient v_p_mag_sqr(v_p,v_p);
-    PowerCoefficient v_p_mag(v_p_mag_sqr,0.5);
+   // InnerProductCoefficient v_p_mag_sqr(v_p,v_p);
+    //PowerCoefficient v_p_mag(v_p_mag_sqr,0.5);
 
     SumCoefficient alpha_min_eta(Alpha,Eta,1.0,-1.0);
     ProductCoefficient ame_ve_mag(alpha_min_eta,v_e_mag);//alpha minus eta times magnitude v_e
 
     ProductCoefficient alpha_ve_mag(Alpha,v_e_mag);
 
-    // constants to be multiplied into mass matrices for S matrices
+    // constants to be multiplied into mass integrators for S matrices
     SumCoefficient SeeTot(ame_ve_mag,div_v_e,1.0,-1.0);
     SumCoefficient SpeTot(alpha_ve_mag,div_v_p,1.0,-1.0);
 
     //VectorFunctionCoefficient vel_test(dim,velocity_function);
     
-    //BCs will have to specify in function the specifics of BCs later
+    //BCs will have to specify in function the specifics later
     
     //For initial conditions primarily for physics check, will have to specify later
     
@@ -163,12 +175,12 @@ int main(int agrc, char *argv[]){
 
     Kep.AddBoundaryIntegrator(new VectorNormedMassIntegrator(v_p,Gamma), cathode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), cathode_bdr);
-    See.AddDomainIntegrator(new MassIntegrator(zero));
+    See.AddDomainIntegrator(new MassIntegrator(SeeTot));
     Ap.AddDomainIntegrator(new AdvectionSUPGIntegrator(v_p,1.0,diff_const_p));
     Dp.AddDomainIntegrator(new DiffusionIntegrator(diff_const_p));
     Kp.AddBoundaryIntegrator(new VectorNormedMassIntegrator(v_p,one),anode_bdr);
     //Kep.AddBoundaryIntegrator(new VectorBoundaryLFIntegrator(velocity_p), anode_bdr);
-    Spe.AddDomainIntegrator(new MassIntegrator(zero));
+    Spe.AddDomainIntegrator(new MassIntegrator(SpeTot));
     
     //after integrators are correctly defined, the Jacobian can be simply added or subtracted together 
     // as specified after assembling
@@ -244,15 +256,47 @@ int main(int agrc, char *argv[]){
 
     //from here the eigenvalue problem can be solved
 
-    BlockVector u_block(block_offsets);
-
     //physics tests
 
     time_indep_diffusion(fespace, Block_Jacobian, block_offsets);//elliptic problem
     time_dep_diffusion(fespace, Block_Jacobian, Block_Mass, block_offsets);//parabolic problem
 
     //eigensolver slepc
+    int nev = 5;
+    SlepcEigenSolver *slepc = new SlepcEigenSolver();
+    slepc->SetNumModes(nev);
+    slepc->SetWhichEigenpairs(SlepcEigenSolver::Target_REAL);
+    slepc->SetTarget(0.0);
+    slepc->SetSpectralTransformation(SlepcEigenSolver::SHIFT_INVERT);
+    slepc->SetOperators(Block_Jacobian,Block_Mass); //might need to convert datatypes to petsc matrices
 
+    Array<double> eig_vals;
+
+    slepc->Solve();
+    eig_vals.SetSize(nev);
+    for(int i = 0; i<nev; i++){
+        slepc->GetEigenvalue(i,eig_vals[i]);
+    }
+
+    BlockVector u_block(block_offsets); //to intialize size of matrix containing eigenvectors
+    Matrix eig_vecs(u_block.Size(),nev); //eigenvectors stored as columns in this matrix
+
+    for(int i = 0; i < nev; i++){
+        slepc->GetEigenvector(i,u_block);
+        for(int j = 0; j < u_block.Size(); j++){
+            eig_vecs(j,i) = u_block[j];
+        }
+    }
+    
+/*
+    DataCollection *dc = NULL;
+    dc = new VisItDataCollection("Eigenmodes_test",&mesh);
+    dc->SetPrecision(8);
+    for()
+    dc->RegisterField("solution",&u);
+    dc->Save();
+    delete dc;
+*/
    //ofstream meshfile;
     //meshfile.open("mesh.dat");
     //for(int i=0; i < mesh.GetElementSize)
@@ -429,49 +473,6 @@ void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &o
     Array<int> ess_bdr(mesh.bdr_attributes.Max());
     ess_bdr = 1;
 
-   // rhs.Update(e_source,offsets[0]);
-   // rhs.Update(p_source, offsets[1]);
-/*
-    LinearForm *e_source(new LinearForm);
-    e_source->Update(fes,rhs.GetBlock(0),0);
-    e_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
-    e_source->Assemble();
-    e_source->SyncAliasMemory(rhs);
-
-    LinearForm *p_source(new LinearForm);
-    p_source->Update(fes,rhs.GetBlock(1),0);
-    p_source->AddDomainIntegrator(new DomainLFIntegrator(zero));
-    p_source->Assemble();
-    p_source->SyncAliasMemory(rhs);
-*/
-
-/*
-    GSSmoother M1(J.GetBlock(0,0));
-    GSSmoother M2(J.GetBlock(1,1));
-    
-    BlockDiagonalPreconditioner P(offsets);
-
-    P.SetDiagonalBlock(0,&M1);
-    P.SetDiagonalBlock(1,&M2);
-
-    PCG(J,P,rhs,n_block,1, 500, 1e-12, 0.0);
-    //CG(J,rhs,n_block,1, 500, 1e-12, 0.0);
-*/
-
-    cout << "n_block BlockVector check : " << n_block.Size()<< endl;
-    for(int i = 0; i < n_block.Size(); i++ )
-        cout << n_block[i] << endl;
-
-    cout << "rhs BlockVector check : " << rhs.Size()<< endl;
-    for(int i = 0; i < rhs.Size(); i++ )
-        cout << rhs[i] << endl;
-
-/* SuiteSparse not downloaded
-    UMFPackSolver solver;
-    solver.SetOperator(J);
-    solver.Mult(rhs, n_block);
-*/
-
     SparseMatrix *JSp = J.CreateMonolithic();
     GSSmoother M(*JSp);
     GMRES(*JSp,M,rhs,n_block, 1, 500, 10, 1e-12, 0.0);
@@ -523,7 +524,7 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
     b.GetBlock(1) = b_p;
 //initial conditions
     DataCollection *dc = NULL;
-    dc = new VisItDataCollection("Time_dep_diff_init",&mesh);
+    dc = new VisItDataCollection("Time_dep_problem_1V",&mesh);
     dc->SetPrecision(8);
     dc->RegisterField("solution_e",&n_e);
     dc->RegisterField("solution_p",&n_p);
@@ -538,14 +539,6 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
     diff.SetTime(t);
     ode_solver->Init(diff);
 
-/* TODO: figure out how to save individual solutions in visit
-    DataCollection *dc = NULL;
-    dc = new VisItDataCollection("Time_dependant_diffusion", &mesh);
-    int precision = 8;
-    dc->SetPrecision(precision);
-*/
-    //double t_final = 10.0;
-    //double dt = 0.01;
     int vis_steps = 5;
     bool done = false;
     for (int ti = 0; !done; )
@@ -561,8 +554,6 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
         //cout << "n_e check" << n_e << endl;
 
         done = (t >= t_final - 1e-8*dt);
-
-        
 
         if (done || ti % vis_steps == 0)
         {
@@ -582,7 +573,7 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
     cout<< n_e << endl;
 
     dc = NULL;
-    dc = new VisItDataCollection("Time_dep_diff_final",&mesh);
+    dc = new VisItDataCollection("Time_dep_final_1V",&mesh);
     dc->SetPrecision(8);
     dc->RegisterField("solution_e",&n_e);
     dc->RegisterField("solution_p",&n_p);

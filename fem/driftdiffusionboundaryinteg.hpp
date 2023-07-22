@@ -17,14 +17,15 @@
 namespace mfem
 {
 
-class VectorNormedMassIntegrator : public MassIntegrator
+class VectorNormedMassIntegrator : public BilinearFormIntegrator
 {
 protected:
 
 #ifndef MFEM_THREAD_SAFE
    Vector shape, te_shape;
 #endif
-    DenseMatrix Q_ir, adjJ;
+
+   DenseMatrix Q_ir, adjJ;
    VectorCoefficient *Q;
    Coefficient *Factor;
  /*  // PA extension
@@ -38,12 +39,11 @@ public:
     VectorNormedMassIntegrator(VectorCoefficient &q, Coefficient &factor)
     : Q(&q), Factor(&factor) {}
 
-    using BilinearFormIntegrator::AssembleFaceMatrix;
+    //using BilinearFormIntegrator::AssembleFaceMatrix;
 
-    virtual void AssembleFaceMatrix(const FiniteElement &el1,
-                                   const FiniteElement &el2,
-                                   FaceElementTransformations &Trans,
-                                   DenseMatrix &elmat);
+    virtual void AssembleElementMatrix(const FiniteElement &el,
+                                    ElementTransformation &Trans,
+                                    DenseMatrix &elmat);
 
     virtual ~VectorNormedMassIntegrator();
 };
