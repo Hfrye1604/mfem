@@ -4,7 +4,7 @@
     for stability analysis. This code is written with dimensional generality in mind.
 */
 //#include "/g/g11/frye11/mfem/mfem.hpp"
-#include "mfem.hpp"
+#include "../../mfem.hpp"
 //#include "NSnonlininteg_modified.hpp"
 //#include "fem/advectionSUPGinteg.hpp"
 #include <fstream>
@@ -12,9 +12,9 @@
 #include "params.hpp"
 #include "fe_evolution.hpp"
 
-#ifndef MFEM_USE_SLEPC
-#error This examples requires that MFEM is build with MFEM_USE_SLEPC=YES
-#endif
+//#ifndef MFEM_USE_SLEPC
+//#error This examples requires that MFEM is build with MFEM_USE_SLEPC=YES
+//#endif
 
 using namespace std;
 using namespace mfem;
@@ -31,6 +31,7 @@ void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&, BlockMatrix&, A
 //return correct boundary markers for problem
 void lap_1d_bc(Array<int> &anode, Array<int> &cathode);
 void lap_2d_bc(Array<int> &anode, Array<int> &cathode);
+void lap_2d_l_shape(Array<int> &anode, Array<int> &cathode);
 
 //velocity coefficient -- input to program based off of electric field E
 void velocity_function_e(const Vector &x, Vector &v);
@@ -84,7 +85,10 @@ double noise_ic(const Vector &x){
 }
 */
 int main(int agrc, char *argv[]){
-    const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
+   // const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
+    //const char *mesh_file = "../../data/square-disc.mesh";
+    //const char *mesh_file = "../../data/l-shape.mesh";
+    const char *mesh_file = "../../data/amr-quad.mesh";
     //const char *mesh_file = "../../data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
 
@@ -105,7 +109,7 @@ int main(int agrc, char *argv[]){
     cout << "Vector Dim: " << fespace.GetVDim() << endl;
 
     //boundary markers for cathode and anode
-    //For 1D case
+    //For 2D parallel plates 
     Array<int> cathode_bdr(mesh.bdr_attributes.Max());
     Array<int> anode_bdr(mesh.bdr_attributes.Max());
     cathode_bdr =0;
@@ -114,6 +118,17 @@ int main(int agrc, char *argv[]){
     anode_bdr[2]=1; //change for 2d
     //E_field for 1d
 
+/*
+    //For l-shape geom
+    Array<int> cathode_bdr(mesh.bdr_attributes.Max());
+    Array<int> anode_bdr(mesh.bdr_attributes.Max());
+    cathode_bdr = 0;
+    anode_bdr = 0;
+    cathode_bdr[0]=1;
+    cathode_bdr[1]=1;
+    anode_bdr[4]=1; 
+    anode_bdr[5]=1;
+*/
     GridFunction e_pot = electric_potential(order,V,epsilon,fespace,true);
     GradientGridFunctionCoefficient E(&e_pot);
     
@@ -260,7 +275,7 @@ int main(int agrc, char *argv[]){
 
     time_indep_diffusion(fespace, Block_Jacobian, block_offsets);//elliptic problem
     time_dep_diffusion(fespace, Block_Jacobian, Block_Mass, block_offsets);//parabolic problem
-
+/*
     //eigensolver slepc
     int nev = 5;
     SlepcEigenSolver *slepc = new SlepcEigenSolver();
@@ -268,7 +283,7 @@ int main(int agrc, char *argv[]){
     slepc->SetWhichEigenpairs(SlepcEigenSolver::Target_REAL);
     slepc->SetTarget(0.0);
     slepc->SetSpectralTransformation(SlepcEigenSolver::SHIFT_INVERT);
-    slepc->SetOperators(Block_Jacobian,Block_Mass); //might need to convert datatypes to petsc matrices
+    slepc->SetOperators(Block_Jacobian,Block_Mass); //might need to convert datatypes to petsc
 
     Array<double> eig_vals;
 
@@ -287,7 +302,7 @@ int main(int agrc, char *argv[]){
             eig_vecs(j,i) = u_block[j];
         }
     }
-    
+    */
 /*
     DataCollection *dc = NULL;
     dc = new VisItDataCollection("Eigenmodes_test",&mesh);
@@ -358,9 +373,12 @@ GridFunction electric_potential(int order, double V, double epsilon, FiniteEleme
     //neu_attr = 0;
 
     dir_attr[0] = 1;
+    //dir_attr[1] = 1;
     dir_attr[2] = 1;
+   // dir_attr[5] = 1;
 
     lap_2d_bc(anode_mkr,cathode_mkr);
+    //lap_2d_l_shape(anode_mkr, cathode_mkr);
   //  }
 /*
     neu_attr[1] = 1;
@@ -439,6 +457,17 @@ void lap_2d_bc(Array<int> &anode, Array<int> &cathode){
 
     anode[0] = 1;
     cathode[2] = 1;
+
+}
+
+void lap_2d_l_shape(Array<int> &anode, Array<int> &cathode){
+
+    cathode = 0;
+    anode = 0;
+    cathode[0]=1;
+    cathode[1]=1;
+    anode[4]=1; 
+    anode[5]=1;
 
 }
 

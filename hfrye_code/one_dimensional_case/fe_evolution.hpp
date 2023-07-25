@@ -1,4 +1,4 @@
-#include "mfem.hpp"
+#include "../../mfem.hpp"
 #include "cmath"
 
 namespace mfem
