@@ -9,6 +9,7 @@
 //#include "fem/advectionSUPGinteg.hpp"
 #include <fstream>
 #include <iostream>
+#include <math.h>
 #include "params.hpp"
 #include "fe_evolution.hpp"
 
@@ -32,6 +33,7 @@ void advection_dominated_flow(FiniteElementSpace&, BlockMatrix&, BlockMatrix&, A
 void lap_1d_bc(Array<int> &anode, Array<int> &cathode);
 void lap_2d_bc(Array<int> &anode, Array<int> &cathode);
 void lap_2d_l_shape(Array<int> &anode, Array<int> &cathode);
+void lap_sqr_disc(Array<int> &anode, Array<int> &cathode, Array<int> &ess_bdr);
 
 //velocity coefficient -- input to program based off of electric field E
 void velocity_function_e(const Vector &x, Vector &v);
@@ -76,19 +78,27 @@ double time_dep_diff_ic(const Vector &x){
     return 1;
     }
 }
-/*
+
 double noise_ic(const Vector &x){
     int dim = x.Size();
-    Vector X(dim);
+    //Vector X(dim);
+    
+    unsigned int seed = time(NULL)+round(1000*x(0))+round(10000*x(1));
+    srand(seed);
 
+    double rand_num = ((double) rand() / (RAND_MAX));
+
+    seed++;
+    
+    return rand_num;
 
 }
-*/
+
 int main(int agrc, char *argv[]){
    // const char *mesh_file = "../../data/inline-quad.mesh"; //Currently 2-d basic mesh to easily view results in visit
-    //const char *mesh_file = "../../data/square-disc.mesh";
+    const char *mesh_file = "../../data/square-disc.mesh";
     //const char *mesh_file = "../../data/l-shape.mesh";
-    const char *mesh_file = "../../data/amr-quad.mesh";
+    //const char *mesh_file = "../../data/amr-quad.mesh";
     //const char *mesh_file = "../../data/inline-segment.mesh";
     int order = 2; //second order legendre-Gauss solver (Make sure that's what it uses as according to Shibata paper)
 
@@ -110,14 +120,15 @@ int main(int agrc, char *argv[]){
 
     //boundary markers for cathode and anode
     //For 2D parallel plates 
+    Array<int> bdr_mkr(mesh.bdr_attributes.Max());
     Array<int> cathode_bdr(mesh.bdr_attributes.Max());
     Array<int> anode_bdr(mesh.bdr_attributes.Max());
     cathode_bdr =0;
     anode_bdr = 0;
     cathode_bdr[0]=1;
     anode_bdr[2]=1; //change for 2d
-    //E_field for 1d
-
+    
+    lap_sqr_disc(anode_bdr, cathode_bdr, bdr_mkr);
 /*
     //For l-shape geom
     Array<int> cathode_bdr(mesh.bdr_attributes.Max());
@@ -377,8 +388,9 @@ GridFunction electric_potential(int order, double V, double epsilon, FiniteEleme
     dir_attr[2] = 1;
    // dir_attr[5] = 1;
 
-    lap_2d_bc(anode_mkr,cathode_mkr);
+   // lap_2d_bc(anode_mkr,cathode_mkr);
     //lap_2d_l_shape(anode_mkr, cathode_mkr);
+    lap_sqr_disc(anode_mkr,cathode_mkr,dir_attr);
   //  }
 /*
     neu_attr[1] = 1;
@@ -471,6 +483,23 @@ void lap_2d_l_shape(Array<int> &anode, Array<int> &cathode){
 
 }
 
+void lap_sqr_disc(Array<int> &anode, Array<int> &cathode, Array<int> &ess_bdr){
+
+    cathode = 0 ;
+    anode = 0;
+    cathode[0] = 1;
+    cathode[1] = 1;
+    cathode[2] = 1;
+    cathode[3] = 1;
+    anode[4] = 1;
+    anode[5] = 1;
+    anode[6] = 1;
+    anode[7] = 1;
+
+    ess_bdr = 1;
+
+}
+
 //Where time derivative in equations go to zero, and velocity is set to zero
 void time_indep_diffusion(FiniteElementSpace &fes, BlockMatrix& J, Array<int> &offsets){
     Mesh &mesh = *fes.GetMesh();
@@ -530,11 +559,17 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
 
     ODESolver *ode_solver = new BackwardEulerSolver;
 
-    FunctionCoefficient ne_0(time_dep_diff_ic);
-    FunctionCoefficient np_0(time_dep_diff_ic);
+    //FunctionCoefficient ne_0(time_dep_diff_ic); Gaussian 
+    //FunctionCoefficient np_0(time_dep_diff_ic);
+
+    FunctionCoefficient ne_0(noise_ic); 
+    FunctionCoefficient np_0(noise_ic);
 
     n_e.ProjectCoefficient(ne_0);
     n_p.ProjectCoefficient(np_0);
+
+    //cout << "ne_0 check:" << endl;
+    //cout << n_e << endl;
 
     //TODO:define block vector
     BlockVector n_block(offsets), b(offsets);
@@ -592,7 +627,6 @@ void time_dep_diffusion(FiniteElementSpace& fes, BlockMatrix& J, BlockMatrix& M,
                 dc->SetTime(t);
                 dc->Save();
         }
-        
     }
 
     n_e.MakeRef(&fes,n_block.GetBlock(0),0);

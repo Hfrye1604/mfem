@@ -7,14 +7,14 @@ namespace mfem
     double dt = 0.001;
 
     //problem parameters
-    double V = 0.1; //anode voltage
+    double V =1.0; //anode voltage
     double epsilon = 1.0;//permittivity
 
     ConstantCoefficient mu_e(1.0); //Mobility coefficents 20
     ConstantCoefficient mu_p(-1.0);  // 0.0001
 
-    ConstantCoefficient diff_const_e(0.1); //diffusion coefficients 200
-    ConstantCoefficient diff_const_p(0.1); //.00005
+    ConstantCoefficient diff_const_e(1.0); //diffusion coefficients 200
+    ConstantCoefficient diff_const_p(1.0); //.00005
 
     //both mobility and diffusion coefficients may not be constant depending on problem domain
     //should be possible to redefine variables as function coefficients 
@@ -23,7 +23,7 @@ namespace mfem
     ConstantCoefficient Alpha(.7); //ionization coefficient 200
     ConstantCoefficient Eta(.3); //attachment coefficient 
     ConstantCoefficient Beta(1); //recombination coefficient; not used in perturbation equations
-    ConstantCoefficient Gamma(0.1); //secondary electron emission coefficient 0.01
+    ConstantCoefficient Gamma(10.0); //secondary electron emission coefficient 0.01
 
     ConstantCoefficient zero(0.0);
     ConstantCoefficient one(1.0);
