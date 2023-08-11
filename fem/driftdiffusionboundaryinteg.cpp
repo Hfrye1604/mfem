@@ -14,7 +14,7 @@ namespace mfem
             int dim = Trans.GetSpaceDim();
             double w;
 
-            std::cout << "fem space dimension: "<<dim << std::endl;
+            //std::cout << "fem space dimension: "<<dim << std::endl;
 
             Vector normal(dim);
             Vector vecRef(dim);
@@ -44,29 +44,24 @@ namespace mfem
                 
                 el.CalcPhysShape(Trans, shape);
 
-                CalcOrtho(Trans.Jacobian(), normal); //may need to apply jacobian
-                normal *= ip.weight;
-
-                //CalcAdjugate(Trans.Jacobian(), adjJ);
-
-                Q_ir.GetColumnReference(i, vecRef);
-
-                //adjJ.Mult(vecRef, vecPhys);
-
-                w = vecRef*normal; 
-
-                std::cout << "vector normal: " << w << std::endl;
-
-                double k = Factor->Eval(Trans,ip);
-                w *= k;
-/*
-                w = Trans.Weight() * ip.weight;
-                if (Q)
-                {
-                    w *= Q -> Eval(Trans, ip);
+                if(dim > 1){
+                    CalcOrtho(Trans.Jacobian(), normal); //may need to apply jacobian
+                    normal *= ip.weight;
+                    Q_ir.GetColumnReference(i, vecRef);
+                    w = vecRef*normal; 
+                    double k = Factor->Eval(Trans,ip);
+                    w *= k;
+                    AddMult_a_VVt(w, shape, elmat);
+                } else{
+                    normal *= ip.weight;
+                    Q_ir.GetColumnReference(i, vecRef);
+                    w = vecRef*normal; 
+                    double k = Factor->Eval(Trans,ip);
+                    w *= k;
+                    AddMult_a_VVt(w, shape, elmat);
+                    normal *= -1;
                 }
-*/
-                AddMult_a_VVt(w, shape, elmat);
+
             }
 
         };

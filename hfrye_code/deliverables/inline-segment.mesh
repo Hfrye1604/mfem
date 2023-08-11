@@ -1,0 +1,5 @@
+MFEM INLINE mesh v1.0
+
+type = segment
+nx = 200
+sx = 1.0

@@ -62,9 +62,9 @@ private:
     
 public:
     AdvectionSUPGIntegrator(VectorCoefficient &advectionVelocity, 
-          double TauFactor, ConstantCoefficient diffusion) : bdfVec(&advectionVelocity){
+          double TauFactor, Coefficient &diffusion) : bdfVec(&advectionVelocity), DiffCoef(&diffusion){
            TFact = new ConstantCoefficient(TauFactor);
-           DiffCoef = new ConstantCoefficient(diffusion);
+          // DiffCoef = new ConstantCoefficient(diffusion);
           }
           
     virtual void AssembleElementMatrix(const FiniteElement &el,
